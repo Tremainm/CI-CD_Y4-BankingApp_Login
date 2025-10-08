@@ -21,7 +21,7 @@ def customer_payload(
 #Get customers
 def test_list_customers_returns_all(client):
     """Test that GET /api/customers returns all created customers"""
-    # Clear old data and create two customers
+    # Clear old data and create two customers (so the list isn't empty)
     client.post("/api/customers", json={
         "customer_id": 100,
         "name": "Alice",
@@ -44,10 +44,10 @@ def test_list_customers_returns_all(client):
     assert r.status_code == 200
 
     data = r.json()
-    assert isinstance(data, list)
+    assert isinstance(data, list) # response should be a list
     assert len(data) >= 2  # At least the two that were created
 
-    # Check key fields exist
+   # Check that expected keys exist for each item
     assert "customer_id" in data[0]
     assert "email" in data[0]
     assert "password" in data[0]  
