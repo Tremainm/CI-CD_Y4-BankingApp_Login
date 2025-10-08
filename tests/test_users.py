@@ -30,7 +30,7 @@ def test_duplicate_phoneNo_conflict(client):
 
 # check if 'bad' phone numbers fail correctly
 @pytest.mark.parametrize("bad_phoneNo", ["012345", "a12345678", "1234567890", "a2345g"]) # one test can try multiple invalid inputs
-def test_bad_student_id_422(client, bad_phoneNo):
+def test_bad_phoneNo_422(client, bad_phoneNo):
     r = client.post("/users", json=user_payload(email="tom@atu.ie", phoneNo=bad_phoneNo))
     assert r.status_code == 422 # pydantic validation error
 
