@@ -1,8 +1,23 @@
-from pydantic import BaseModel, EmailStr, Field
+from typing import Annotated
+from pydantic import BaseModel, EmailStr, Field, StringConstraints, ConfigDict
 
-class User(BaseModel):
-    id: int 
-    full_name: str = Field(..., min_length=3)
+# reusable constrained strings
+NameStr = Annotated[str, StringConstraints(min_length=2, max_length=100)]
+PhoneStr = Annotated[str, StringConstraints(min_length=7, max_length=20)]
+PasswordStr = Annotated[str, StringConstraints(min_length=6, max_length=128)]
+
+
+class UserCreate(BaseModel):
+    full_name: NameStr
     email: EmailStr
-    phone_number: str = Field(..., pattern=r"^\+?\d{7,15}$") #Phone number must contain only digits and may start with + 
-    password: str = Field(..., min_length=8)
+    phone_number: PhoneStr
+    password: PasswordStr
+
+
+class UserRead(BaseModel):
+    id: int
+    full_name: str
+    email: EmailStr
+    phone_number: str
+
+    model_config = ConfigDict(from_attributes=True)
