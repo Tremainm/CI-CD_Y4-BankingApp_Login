@@ -1,55 +1,99 @@
-from fastapi import FastAPI, HTTPException, status
-from .schemas import User
+from contextlib import asynccontextmanager
 
-app = FastAPI()
+from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
-users = []
+from .database import engine, SessionLocal
+from .models import Base, UserDB
+from .schemas import UserCreate, UserRead
 
-#Register a new user
-@app.post("/user/register/")
-def register_user(user: User):
-    for u in users:
-        if u.email == user.email:
-            raise HTTPException(status_code=400, detail="Email already registered")
-    users.append(user)
-    return {"message": "User registered successfully", "user": user}
 
-#Update an existing user
-@app.put("/user/update/{user_id}")
-def update_user(user_id: int, updated_user: User):
-    for i, e in enumerate(users):
-        if e.id == user_id:
-            users[i] = updated_user
-            return {"message": "User updated successfully", "user": updated_user}
-    raise HTTPException(status_code=404, detail="User not found")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    Base.metadata.create_all(bind=engine)
+    yield
 
-#Delete a user
-@app.delete("/user/delete_user/{user_id}")
-def delete_user(user_id: int):
-    for i, user in enumerate(users):
-        if user.id == user_id:
-            users.pop(i)
-            return {"message": "User deleted successfully"}
-    raise HTTPException(status_code=404, detail="User not found")
 
-#Get user details
-@app.get("/user/get_user/{user_id}")
-def get_user(user_id: int):
-    for user in users:
-        if user.id == user_id:
-            return user
-    raise HTTPException(status_code=404, detail="User not found")
+app = FastAPI(lifespan=lifespan)
 
-#Get all users
-@app.get("/user/get_users/")
-def get_users():
-    return users
+# CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-#Update user password
-@app.put("/user/update_password/{user_id}")
-def update_password(user_id: int, new_password: str):
-    for i, user in enumerate(users):
-        if user.id == user_id:
-            users[i].password = new_password
-            return {"message": "Password updated successfully"}
-    raise HTTPException(status_code=404, detail="User not found")
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+# Create user
+@app.post("/api/users", response_model=UserRead, status_code=status.HTTP_201_CREATED)
+def create_user(user: UserCreate, db: Session = Depends(get_db)):
+    db_user = UserDB(**user.model_dump())
+    try:
+        db.add(db_user)
+        db.commit()
+        db.refresh(db_user)
+        return db_user
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail="Email or phone number already exists"
+        )
+
+
+# Get all users
+@app.get("/api/users", response_model=list[UserRead])
+def get_users(db: Session = Depends(get_db)):
+    stmt = select(UserDB).order_by(UserDB.id)
+    return list(db.execute(stmt).scalars())
+
+
+# Get single user
+@app.get("/api/users/{user_id}", response_model=UserRead)
+def get_user(user_id: int, db: Session = Depends(get_db)):
+    user = db.get(UserDB, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+
+
+# Update user
+@app.put("/api/users/{user_id}", response_model=UserRead)
+def update_user(user_id: int, updated: UserCreate, db: Session = Depends(get_db)):
+    user = db.get(UserDB, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    for key, value in updated.model_dump().items():
+        setattr(user, key, value)
+
+    try:
+        db.commit()
+        db.refresh(user)
+        return user
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Update failed")
+
+
+# Delete user
+@app.delete("/api/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_user(user_id: int, db: Session = Depends(get_db)):
+    user = db.get(UserDB, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    db.delete(user)
+    db.commit()
